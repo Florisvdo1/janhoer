@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<!-- Prevent pinch-zoom on mobile -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>Emoji Planner - Text Safely Inside Sector</title>
+<style>
+  /* Basic page styling */
+  html, body {
+    margin:0; padding:0; width:100%; height:100%;
+    overflow:hidden; /* We'll only scroll in the categories area */
+    font-family:'Segoe UI', sans-serif; font-weight:600;
+    background: linear-gradient(120deg, #daf3ff 0%, #b0d8f8 100%);
+  }
+
+  /* Clouds behind everything (optional) */
+  .clouds-container {
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    z-index:-1; pointer-events:none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(255,255,255,0.25) 0 40px,
+      rgba(255,255,255,0.1) 40px 80px
+    );
+  }
+
+  /* Main container => partial transparency => see clouds behind */
+  .app-container {
+    position:relative; 
+    display:flex; 
+    flex-direction:column;
+    width:100%; 
+    height:100%;
+    background:rgba(255,255,255,0.5);
+    backdrop-filter:blur(3px);
+    box-sizing:border-box;
+  }
+
+  /* Header */
+  header {
+    background:rgba(176,216,248,0.5);
+    min-height:50px; 
+    display:flex; 
+    align-items:center; 
+    justify-content:space-between;
+    padding:0 1rem; 
+    box-sizing:border-box;
+  }
+  header h1 {
+    margin:0; 
+    font-size:clamp(1.12rem, 2.4vw, 1.44rem); 
+    color:#024875;
+    text-transform:uppercase; 
+    letter-spacing:1px;
+  }
+  .header-buttons {
+    display:flex; 
+    align-items:center; 
+    gap:0.5rem;
+  }
+  button {
+    background:linear-gradient(120deg, #b0d8f8, #cceeff);
+    border:none; 
+    border-radius:20px; 
+    font-size:clamp(0.56rem, 1.6vw, 0.72rem);
+    padding:0.32rem 0.64rem; 
+    cursor:pointer;
+    box-shadow:0 2px rgba(0,0,0,0.15);
+  }
+
+  /* 3D Carousel container => deeper 3D effect, squares, no cut-offs. */
+  .carousel-viewport {
+    position:relative; 
+    display:flex; 
+    justify-content:center; 
+    perspective:1000px; 
+    overflow:visible;
+    margin-bottom:1.2vh;
+  }
+  .carousel-stage {
+    position:relative;
+    width:100%; 
+    max-width:900px;
+    height:clamp(180px, 30vh, 300px); 
+    transform-style:preserve-3d;
+  }
+
+  /* Each sector => perfect square => placeholders in center => 2px dark-blue stroke => 
+     side placeholders blurred => center is fully opaque & on top => 
+     now with extra padding so text won't overlap border. */
+  .sector {
+    position:absolute; 
+    top:50%; left:50%;
+    transform: translate(-50%, -50%) rotateY(0) scale(1);
+
+    width: clamp(140px, 35vw, 280px);
+    height: clamp(140px, 35vw, 280px);
+
+    background: #b0d8f8cc; /* partial alpha by default for side sectors */
+    border-radius:12px;
+    border:2px solid #002f6b; /* 2px dark-blue stroke */
+    box-shadow:0 8px 20px rgba(0,0,0,0.25);
+
+    display:flex; 
+    flex-direction:column; 
+    align-items:center; 
+    justify-content:center;
+
+    /* Extra padding so text & placeholders never touch or overlap the border. */
+    padding: clamp(0.3rem, 2vw, 0.8rem);
+
+    transition:
+      transform 0.7s cubic-bezier(0.25, 0.8, 0.25, 1),
+      opacity 0.7s cubic-bezier(0.25, 0.8, 0.25, 1),
+      filter 0.7s cubic-bezier(0.25, 0.8, 0.25, 1),
+      background-color 0.7s cubic-bezier(0.25, 0.8, 0.25, 1);
+    opacity:0; /* non-active by default */
+    z-index:5; /* side sectors behind center */
+  }
+
+  /* We'll wrap label + placeholders in .sector-content => not mandatory, but keeps it tidy. */
+  .sector-content {
+    display:flex; 
+    flex-direction:column; 
+    align-items:center; 
+    justify-content:center;
+    gap:clamp(0.3rem, 1.5vw, 0.6rem);
+  }
+
+  .sector-label h2 {
+    margin:0;
+    font-size:clamp(0.7rem, 1.8vw, 0.88rem);
+    color:#024875;
+  }
+  .sector-blur {
+    transition: filter 0.7s, opacity 0.7s;
+  }
+
+  /* Active => center => fully opaque => no blur => z-index=20 => no line overlap. */
+  .sector.active {
+    opacity:1;
+    z-index:20;
+    transform: translate(-50%, -50%) rotateY(0) scale(1);
+    background:#b0d8f8; /* fully opaque for the center sector */
+  }
+  .sector.active .sector-blur {
+    filter:none; 
+    opacity:1;
+  }
+
+  /* left => placeholders blurred => partial alpha => behind center => z-index:5 */
+  .sector.left {
+    opacity:0.7;
+    background:#b0d8f8cc; 
+    transform: translate(-50%, -50%)
+      rotateY(45deg)
+      translateZ(-40px)
+      translateX(calc(clamp(-110px, -18vw, -160px) - 2px))
+      translateY(clamp(4px, 0.8vh, 8px))
+      scale(0.9);
+  }
+  .sector.left .sector-blur {
+    filter: blur(3px);
+    opacity:0.5;
+  }
+
+  /* right => placeholders blurred => partial alpha => behind center => z-index:5 */
+  .sector.right {
+    opacity:0.7;
+    background:#b0d8f8cc; 
+    transform: translate(-50%, -50%)
+      rotateY(-45deg)
+      translateZ(-40px)
+      translateX(calc(clamp(110px, 18vw, 160px) + 2px))
+      translateY(clamp(4px, 0.8vh, 8px))
+      scale(0.9);
+  }
+  .sector.right .sector-blur {
+    filter: blur(3px);
+    opacity:0.5;
+  }
+
+  /* 2×2 placeholders => ~20% smaller => remain inside the sector-blur container. */
+  .placeholder-grid {
+    display:grid; 
+    grid-template-columns:repeat(2,1fr); 
+    grid-template-rows:repeat(2,1fr);
+    gap:0.6vh; 
+  }
+  .placeholder {
+    width: clamp(34px, 18vw, 60px); 
+    height: clamp(34px, 18vw, 60px);
+    border-radius:8px;
+    background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.5), rgba(176,216,248,0.3));
+    border:2px solid rgba(255,255,255,0.3);
+    display:flex; align-items:center; justify-content:center; 
+    color:#024875; 
+    box-shadow:inset 0 0 8px rgba(255,255,255,0.3), 0 2px 5px rgba(0,0,0,0.1);
+  }
+
+  /* The categories => negative margin => -6.4% as before. */
+  .main-content {
+    flex:1; 
+    overflow-y:auto;
+    background:rgba(255,255,255,0.2);
+    margin-top:-6.4%;
+  }
+  .category-block {
+    background:rgba(255,255,255,0.2);
+    margin:1rem; 
+    border-radius:8px; 
+    padding:1rem;
+  }
+  .emoji-grid {
+    display:grid; 
+    grid-template-columns:repeat(auto-fill, minmax(40px,1fr)); 
+    gap:6px;
+  }
+  .emoji-item {
+    background:linear-gradient(to bottom right, rgba(255,255,255,0.4), rgba(176,216,248,0.3));
+    border-radius:6px; 
+    text-align:center; 
+    padding:0.4rem; 
+    cursor:grab;
+  }
+
+  /* Drag fix => pinned under finger => no offset. */
+  .emoji-item.dragging {
+    position:fixed; 
+    z-index:9999; 
+    pointer-events:none; 
+    opacity:0.8; 
+    transform:scale(1.1);
+  }
+</style>
+</head>
+<body>
+<div class="clouds-container"></div>
+
+<div class="app-container">
+  <header>
+    <h1>Emoji Planner</h1>
+    <div class="header-buttons">
+      <button id="resetBtn">Reset</button>
+      <button id="saveBtn">Save</button>
+    </div>
+  </header>
+
+  <div class="carousel-viewport">
+    <div class="carousel-stage">
+      <!-- Morning => center by default -->
+      <div class="sector active" data-day="morning" id="morningSect">
+        <div class="sector-content">
+          <div class="sector-label">
+            <h2>Morning</h2>
+          </div>
+          <div class="sector-blur">
+            <div class="placeholder-grid" id="morningGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Midday => partial alpha => placeholders blurred => behind center => z-index:5 -->
+      <div class="sector right" data-day="midday" id="middaySect">
+        <div class="sector-content">
+          <div class="sector-label">
+            <h2>Midday</h2>
+          </div>
+          <div class="sector-blur">
+            <div class="placeholder-grid" id="middayGrid"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evening => partial alpha => placeholders blurred => behind center => z-index:5 -->
+      <div class="sector left" data-day="evening" id="eveningSect">
+        <div class="sector-content">
+          <div class="sector-label">
+            <h2>Evening</h2>
+          </div>
+          <div class="sector-blur">
+            <div class="placeholder-grid" id="eveningGrid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main-content" id="mainContent"></div>
+</div>
+
+<script>
+let layout={
+  morning:[null,null,null,null],
+  midday:[null,null,null,null],
+  evening:[null,null,null,null]
+};
+
+/* Initialize placeholders => optional double-tap removal. */
+function initSectors(){
+  ['morning','midday','evening'].forEach(day=>{
+    const grid=document.getElementById(day+'Grid');
+    grid.innerHTML='';
+    layout[day].forEach(emojiChar=>{
+      const ph=document.createElement('div');
+      ph.className='placeholder';
+      if(emojiChar) ph.textContent=emojiChar;
+
+      /* double-tap removal if desired */
+      let lastTap=0;
+      ph.addEventListener('touchstart',(e)=>{
+        const now=e.timeStamp;
+        if(now - lastTap < 300){
+          ph.textContent='';
+        }
+        lastTap=now;
+      });
+
+      grid.appendChild(ph);
+    });
+  });
+}
+
+/* Minimal categories => pinned drag => swap => magnet. */
+const catNames=["events","study","sport","travel","hobbies","party"];
+const baseEmojis=[
+  "📅","🏆","🎉","📚","⚽","🏀","🏊‍♀️","🏋️",
+  "🚴","🍕","🍔","🥗","🍩","☕","🎨","🎮",
+  "🏖","🕹","📱","💻"
+];
+function initCategories(){
+  const main=document.getElementById('mainContent');
+  main.innerHTML='';
+  catNames.forEach(cat=>{
+    const block=document.createElement('div');
+    block.className='category-block';
+    const h3=document.createElement('h3');
+    h3.textContent=cat;
+    block.appendChild(h3);
+
+    const grid=document.createElement('div');
+    grid.className='emoji-grid';
+    for(let i=0;i<20;i++){
+      const item=document.createElement('div');
+      item.className='emoji-item';
+      item.textContent=baseEmojis[i % baseEmojis.length];
+      item.addEventListener('touchstart',handleEmojiTouchStart);
+      grid.appendChild(item);
+    }
+    block.appendChild(grid);
+    main.appendChild(block);
+  });
+}
+
+/* day containers => morning=active => midday=right => evening=left => pinned drag => 
+   side placeholders blurred => label always unblurred => no overlap or cutoffs => 
+   plus extra sector padding so text never touches the border. */
+function setActiveDay(day){
+  const morning=document.getElementById('morningSect');
+  const midday=document.getElementById('middaySect');
+  const evening=document.getElementById('eveningSect');
+  [morning,midday,evening].forEach(sec=> sec.classList.remove('active','left','right'));
+
+  if(day==='morning'){
+    morning.classList.add('active');
+    midday.classList.add('right');
+    evening.classList.add('left');
+  } else if(day==='midday'){
+    midday.classList.add('active');
+    morning.classList.add('left');
+    evening.classList.add('right');
+  } else {
+    evening.classList.add('active');
+    morning.classList.add('right');
+    midday.classList.add('left');
+  }
+}
+function attachHeroCarousel(){
+  document.getElementById('morningSect').addEventListener('click',()=> setActiveDay('morning'));
+  document.getElementById('middaySect').addEventListener('click',()=> setActiveDay('midday'));
+  document.getElementById('eveningSect').addEventListener('click',()=> setActiveDay('evening'));
+}
+
+/* pinned drag => if invalid drop => magnet => also swap if placeholder is filled. */
+let dragElement=null;
+let originalParent=null;
+let originalIndex=-1;
+function handleEmojiTouchStart(e){
+  e.preventDefault();
+  dragElement=e.currentTarget;
+  dragElement.classList.add('dragging');
+  const touch=e.touches[0];
+  positionDragElement(touch.clientX,touch.clientY);
+  originalParent=dragElement.parentNode;
+  originalIndex=[...originalParent.children].indexOf(dragElement);
+
+  document.addEventListener('touchmove',handleEmojiTouchMove,{passive:false});
+  document.addEventListener('touchend',handleEmojiTouchEnd);
+}
+function handleEmojiTouchMove(e){
+  e.preventDefault();
+  const touch=e.touches[0];
+  positionDragElement(touch.clientX,touch.clientY);
+}
+function handleEmojiTouchEnd(e){
+  document.removeEventListener('touchmove',handleEmojiTouchMove);
+  document.removeEventListener('touchend',handleEmojiTouchEnd);
+
+  if(dragElement){
+    dragElement.classList.remove('dragging');
+    dragElement.style.position='';
+    dragElement.style.left='';
+    dragElement.style.top='';
+
+    const touch=e.changedTouches[0];
+    const elemBelow=document.elementFromPoint(touch.clientX,touch.clientY);
+    const placeholder=elemBelow? elemBelow.closest('.placeholder'):null;
+
+    if(placeholder){
+      // place or swap
+      if(!placeholder.textContent){
+        placeholder.textContent=dragElement.textContent;
+      } else {
+        const tmp=placeholder.textContent;
+        placeholder.textContent=dragElement.textContent;
+        dragElement.textContent=tmp;
+      }
+    } else {
+      // magnet => revert
+      magnetReturn(dragElement, originalParent, originalIndex);
+    }
+    dragElement=null;
+  }
+}
+function positionDragElement(x,y){
+  if(dragElement){
+    const w=dragElement.offsetWidth;
+    const h=dragElement.offsetHeight;
+    dragElement.style.position='fixed';
+    dragElement.style.left=(x - w/2)+'px';
+    dragElement.style.top=(y - h/2)+'px';
+  }
+}
+function magnetReturn(elem, parent, idx){
+  // quick scale bounce
+  elem.animate([
+    { transform:'scale(1.2)' },
+    { transform:'scale(1)' }
+  ], {duration:300, easing:'ease-out'});
+  parent.insertBefore(elem, parent.children[idx]||null);
+}
+
+/* reset & save => minimal approach. */
+function attachButtons(){
+  document.getElementById('resetBtn').addEventListener('click',()=>{
+    layout={
+      morning:[null,null,null,null],
+      midday:[null,null,null,null],
+      evening:[null,null,null,null]
+    };
+    initSectors();
+    alert("All emojis removed ❎");
+  });
+  document.getElementById('saveBtn').addEventListener('click',()=>{
+    alert("Save placeholders... (not implemented).");
+  });
+}
+
+/* final init => placeholders inside sector => no overlap => label inside => pinned drag => no cutoffs => side placeholders blurred. */
+function initAll(){
+  initSectors();
+  initCategories();
+  attachButtons();
+  attachHeroCarousel();
+  setActiveDay('morning'); // morning is center by default
+}
+initAll();
+</script>
+</body>
+</html>
